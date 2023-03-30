@@ -1,0 +1,1189 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/nathdborges/IA-Vaccum-v1/blob/main/Solu%C3%A7%C3%A3o%20Prof%20\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "cyONNBJpG6sj"
+      },
+      "source": [
+        "# Intelligent Agents: Reflex-Based Agents for the Vacuum-cleaner World\n",
+        "\n",
+        "Student Name: [Add your name]\n",
+        "\n",
+        "## Instructions\n",
+        "\n",
+        "Total Points: Undergrads 100 / Graduate students 110\n",
+        "\n",
+        "Complete this notebook. Use the provided notebook cells and insert additional code and markdown cells as needed. Submit the completely rendered notebook as a PDF file. \n",
+        "\n",
+        "## Introduction\n",
+        "\n",
+        "In this assignment you will implement a simulator environment for an automatic vacuum cleaner robot, a set of different reflex-based agent programs, and perform a comparison study for cleaning a single room. Focus on the __cleaning phase__ which starts when the robot is activated and ends when the last dirty square in the room has been cleaned. Someone else will take care of the agent program needed to navigate back to the charging station after the room is clean.\n",
+        "\n",
+        "## PEAS description of the cleaning phase\n",
+        "\n",
+        "__Performance Measure:__ Each action costs 1 energy unit. The performance is measured as the sum of the energy units used to clean the whole room.\n",
+        "\n",
+        "__Environment:__ A room with $n \\times n$ squares where $n = 5$. Dirt is randomly placed on each square with probability $p = 0.2$. For simplicity, you can assume that the agent knows the size and the layout of the room (i.e., it knows $n$). To start, the agent is placed on a random square.\n",
+        "\n",
+        "__Actuators:__ The agent can clean the current square (action `suck`) or move to an adjacent square by going `north`, `east`, `south`, or `west`.\n",
+        "\n",
+        "__Sensors:__ Four bumper sensors, one for north, east, south, and west; a dirt sensor reporting dirt in the current square.  \n",
+        "\n",
+        "\n",
+        "## The agent program for a simple randomized agent\n",
+        "\n",
+        "The agent program is a function that gets sensor information (the current percepts) as the arguments. The arguments are:\n",
+        "\n",
+        "* A dictionary with boolean entries for the for bumper sensors `north`, `east`, `west`, `south`. E.g., if the agent is on the north-west corner, `bumpers` will be `{\"north\" : True, \"east\" : False, \"south\" : False, \"west\" : True}`.\n",
+        "* The dirt sensor produces a boolean.\n",
+        "\n",
+        "The agent returns the chosen action as a string.\n",
+        "\n",
+        "Here is an example implementation for the agent program of a simple randomized agent:  "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "aH-5Zg0AG6sm"
+      },
+      "outputs": [],
+      "source": [
+        "import numpy as np\n",
+        "\n",
+        "actions = [\"north\", \"east\", \"west\", \"south\", \"suck\"]\n",
+        "\n",
+        "def simple_randomized_agent(bumpers, dirty):\n",
+        "    return np.random.choice(actions)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "pXqCRKdSG6sn",
+        "outputId": "5e90560a-26f3-4339-bbf1-a0c1617fcd10",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 35
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "'west'"
+            ],
+            "application/vnd.google.colaboratory.intrinsic+json": {
+              "type": "string"
+            }
+          },
+          "metadata": {},
+          "execution_count": 13
+        }
+      ],
+      "source": [
+        "# define percepts (current location is NW corner and it is dirty)\n",
+        "bumpers = {\"north\" : True, \"east\" : False, \"south\" : False, \"west\" : True}\n",
+        "dirty = True\n",
+        "\n",
+        "# call agent program function with percepts and it returns an action\n",
+        "simple_randomized_agent(bumpers, dirty)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "DyXhu7giG6so"
+      },
+      "source": [
+        "__Note:__ This is not a rational intelligent agent. It ignores its sensors and may bump into a wall repeatedly or not clean a dirty square. You will be asked to implement rational agents below."
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "fD1Vzo6ZG6sp"
+      },
+      "source": [
+        "## Simple environment example\n",
+        "\n",
+        "We implement a simple simulation environment that supplies the agent with its percepts.\n",
+        "The simple environment is infinite in size (bumpers are always `False`) and every square is always dirty, even if the agent cleans it. The environment function returns a performance measure which is here the number of cleaned squares (since the room is infinite and all squares are constantly dirty, the agent can never clean the whole room as required in the PEAS description above). The energy budget of the agent is specified as `max_steps`. "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "-wwfogg3G6sp"
+      },
+      "outputs": [],
+      "source": [
+        "def simple_environment(agent, max_steps, verbose = True):\n",
+        "    num_cleaned = 0\n",
+        "    \n",
+        "    for i in range(max_steps):\n",
+        "        dirty = True\n",
+        "        bumpers = {\"north\" : False, \"south\" : False, \"west\" : False, \"east\" : False}\n",
+        "\n",
+        "        action = agent(bumpers, dirty)\n",
+        "        if (verbose): print(\"step\", i , \"- action:\", action) \n",
+        "        \n",
+        "        if (action == \"suck\"): \n",
+        "            num_cleaned = num_cleaned + 1\n",
+        "        \n",
+        "    return num_cleaned\n",
+        "        \n"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "hPBxdbflG6sq"
+      },
+      "source": [
+        "Do one simulation run with a simple randomized agent that has enough energy for 20 steps."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "uI3247bAG6sr",
+        "outputId": "18ec12ae-c0d9-4395-9487-81efb04a8f0f",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        }
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "step 0 - action: east\n",
+            "step 1 - action: east\n",
+            "step 2 - action: west\n",
+            "step 3 - action: suck\n",
+            "step 4 - action: east\n",
+            "step 5 - action: west\n",
+            "step 6 - action: west\n",
+            "step 7 - action: south\n",
+            "step 8 - action: suck\n",
+            "step 9 - action: east\n",
+            "step 10 - action: north\n",
+            "step 11 - action: suck\n",
+            "step 12 - action: west\n",
+            "step 13 - action: west\n",
+            "step 14 - action: west\n",
+            "step 15 - action: north\n",
+            "step 16 - action: north\n",
+            "step 17 - action: suck\n",
+            "step 18 - action: suck\n",
+            "step 19 - action: north\n"
+          ]
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "5"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 15
+        }
+      ],
+      "source": [
+        "simple_environment(simple_randomized_agent, max_steps = 20)"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "KQ3arqlYG6ss"
+      },
+      "source": [
+        "# Tasks\n",
+        "\n",
+        "## General [10 Points]\n",
+        "\n",
+        "1. Make sure that you use the latest version of this notebook. Sync your forked repository and pull the latest revision. \n",
+        "2. Your implementation can use libraries like math, numpy, scipy, but not libraries that implement inteligent agents or complete search algorithms. Try to keep the code simple! In this course, we want to learn about the algorithms and we often do not need to use object-oriented design.\n",
+        "3. You notebook needs to be formated professionally. \n",
+        "    - Add additional markdown blocks for your description, comments in the code, add tables and use mathplotlib to produce charts where appropriate\n",
+        "    - Do not show debugging output or include an excessive amount of output.\n",
+        "    - Check that your PDF file is readable. For example, long lines are cut off in the PDF file. You don't have control over page breaks, so do not worry about these.\n",
+        "4. Document your code. Add a short discussion of how your implementation works and your design choices.\n",
+        "\n",
+        "\n",
+        "## Task 1: Implement a simulation environment [20 Points]\n",
+        "\n",
+        "The simple environment above is not very realistic. Your environment simulator needs to follow the PEAS description from above. It needs to:\n",
+        "\n",
+        "* Initialize the environment by storing the state of each square (clean/dirty) and making some dirty. ([Help with random numbers and arrays in Python](https://github.com/mhahsler/CS7320-AI/blob/master/HOWTOs/random_numbers_and_arrays.ipynb))\n",
+        "* Keep track of the agent's position.\n",
+        "* Call the agent function repeatedly and provide the agent function with the sensor inputs.  \n",
+        "* React to the agent's actions. E.g, by removing dirt from a square or moving the agent around unless there is a wall in the way.\n",
+        "* Keep track of the performance measure. That is, track the agent's actions until all dirty squares are clean and count the number of actions it takes the agent to complete the task.\n",
+        "\n",
+        "The easiest implementation for the environment is to hold an 2-dimensional array to represent if squares are clean or dirty and to call the agent function in a loop until all squares are clean or a predefined number of steps have been reached (i.e., the robot runs out of energy).\n",
+        "\n",
+        "The simulation environment should be a function like the `simple_environment()` and needs to work with the simple randomized agent program from above. **Use the same environmnt for all your agent implementations in the tasks below.**\n",
+        "\n",
+        "*Note on debugging:* Debugging is difficult. Make sure your environment prints enough information when you use `verbose = True`. Also, implementing a function that the environment can use to displays the room with dirt and the current position of the robot at every step is very useful.  "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "C1gUrjGmG6st",
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "outputId": "3a2a1391-4c22-4907-8bb9-238b85677cfd"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "[[False False False False False]\n",
+            " [False False False False  True]\n",
+            " [False  True False False False]\n",
+            " [False  True False False False]\n",
+            " [False False False False False]]\n"
+          ]
+        }
+      ],
+      "source": [
+        "# Your code and description goes here\n",
+        "import numpy as np\n",
+        "import random\n",
+        "\n",
+        "def get_total_positions_dirty(env):\n",
+        "  return np.sum(env)\n",
+        "  \n",
+        "def convert_to_boolean(x, prob=0.2):\n",
+        "  return True if x < prob else False\n",
+        "  \n",
+        "def create_environment(n=5, prob=0.2):\n",
+        "  Matrix = np.random.random((n,n))\n",
+        "\n",
+        "  func_vectorized = np.vectorize(convert_to_boolean)\n",
+        "  Matrix = func_vectorized(Matrix, prob)\n",
+        "\n",
+        "  return Matrix\n",
+        "\n",
+        "env = create_environment(n=5)\n",
+        "print(env)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "def agent_perception(environment, position):\n",
+        "  north, south, west, east = True, True, True, True\n",
+        "  dim = environment.shape[0]\n",
+        "  x, y = position[0], position[1]\n",
+        "\n",
+        "  if x == 0:\n",
+        "    west = False\n",
+        "  if x == dim-1:\n",
+        "    east = False\n",
+        "  if y == 0:\n",
+        "     north = False\n",
+        "  if y == dim-1:\n",
+        "    south = False\n",
+        "\n",
+        "  perceptions = {\n",
+        "      \"north\" : north, \n",
+        "      \"south\" : south, \n",
+        "      \"west\" : west, \n",
+        "      \"east\" : east\n",
+        "  }\n",
+        "\n",
+        "  dirty = environment[x][y]\n",
+        "  return perceptions, dirty"
+      ],
+      "metadata": {
+        "id": "ncVS1hYet7Xd"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# Your code and description goes here\n",
+        "def base_environment(agent, env_dim=5, verbose = True):\n",
+        "    environment = create_environment()\n",
+        "    position = np.random.randint(0, env_dim, 2)\n",
+        "    num_cleaned = 0\n",
+        "    costs = 0\n",
+        "    i = 0\n",
+        "    while (get_total_positions_dirty(environment) != 0):\n",
+        "        perceptions, dirty = agent_perception(environment, position)\n",
+        "        action = agent(perceptions, dirty)\n",
+        "        if (verbose): print(\"step {} - action {} - position {} - dirty {}\".format(i,  action, position, dirty))\n",
+        "        i+=1     \n",
+        "        if ((action == \"suck\") and (dirty == True)):\n",
+        "          costs+=1\n",
+        "          environment[position[0]][position[1]] = False\n",
+        "          num_cleaned = num_cleaned + 1\n",
+        "        if ((action == 'north') and (perceptions['north'])):\n",
+        "          costs+=1\n",
+        "          position[1] -= 1\n",
+        "        elif ((action == 'south') and (perceptions['south'])):\n",
+        "          costs+=1\n",
+        "          position[1] += 1        \n",
+        "        elif ((action == 'west') and (perceptions['west'])):\n",
+        "          costs+=1\n",
+        "          position[0] -= 1\n",
+        "        elif ((action == 'east') and (perceptions['east'])):\n",
+        "          costs+=1\n",
+        "          position[0] += 1   \n",
+        "            \n",
+        "    return num_cleaned, costs       "
+      ],
+      "metadata": {
+        "id": "U6kL5Yb3uIVy"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "base_environment(simple_randomized_agent)"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "bv3So64luRfY",
+        "outputId": "070a2c76-47f4-4ecf-c7fb-df8649766b3b"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "step 0 - action north - position [0 3] - dirty False\n",
+            "step 1 - action west - position [0 2] - dirty False\n",
+            "step 2 - action south - position [0 2] - dirty False\n",
+            "step 3 - action east - position [0 3] - dirty False\n",
+            "step 4 - action north - position [1 3] - dirty False\n",
+            "step 5 - action east - position [1 2] - dirty False\n",
+            "step 6 - action south - position [2 2] - dirty False\n",
+            "step 7 - action south - position [2 3] - dirty False\n",
+            "step 8 - action south - position [2 4] - dirty False\n",
+            "step 9 - action south - position [2 4] - dirty False\n",
+            "step 10 - action south - position [2 4] - dirty False\n",
+            "step 11 - action north - position [2 4] - dirty False\n",
+            "step 12 - action north - position [2 3] - dirty False\n",
+            "step 13 - action east - position [2 2] - dirty False\n",
+            "step 14 - action west - position [3 2] - dirty False\n",
+            "step 15 - action south - position [2 2] - dirty False\n",
+            "step 16 - action south - position [2 3] - dirty False\n",
+            "step 17 - action west - position [2 4] - dirty False\n",
+            "step 18 - action south - position [1 4] - dirty False\n",
+            "step 19 - action south - position [1 4] - dirty False\n",
+            "step 20 - action east - position [1 4] - dirty False\n",
+            "step 21 - action east - position [2 4] - dirty False\n",
+            "step 22 - action east - position [3 4] - dirty True\n",
+            "step 23 - action east - position [4 4] - dirty False\n",
+            "step 24 - action south - position [4 4] - dirty False\n",
+            "step 25 - action north - position [4 4] - dirty False\n",
+            "step 26 - action west - position [4 3] - dirty False\n",
+            "step 27 - action west - position [3 3] - dirty False\n",
+            "step 28 - action suck - position [2 3] - dirty False\n",
+            "step 29 - action north - position [2 3] - dirty False\n",
+            "step 30 - action suck - position [2 2] - dirty False\n",
+            "step 31 - action east - position [2 2] - dirty False\n",
+            "step 32 - action east - position [3 2] - dirty False\n",
+            "step 33 - action south - position [4 2] - dirty False\n",
+            "step 34 - action suck - position [4 3] - dirty False\n",
+            "step 35 - action suck - position [4 3] - dirty False\n",
+            "step 36 - action north - position [4 3] - dirty False\n",
+            "step 37 - action north - position [4 2] - dirty False\n",
+            "step 38 - action south - position [4 1] - dirty False\n",
+            "step 39 - action south - position [4 2] - dirty False\n",
+            "step 40 - action suck - position [4 3] - dirty False\n",
+            "step 41 - action east - position [4 3] - dirty False\n",
+            "step 42 - action east - position [4 3] - dirty False\n",
+            "step 43 - action north - position [4 3] - dirty False\n",
+            "step 44 - action suck - position [4 2] - dirty False\n",
+            "step 45 - action suck - position [4 2] - dirty False\n",
+            "step 46 - action east - position [4 2] - dirty False\n",
+            "step 47 - action east - position [4 2] - dirty False\n",
+            "step 48 - action east - position [4 2] - dirty False\n",
+            "step 49 - action west - position [4 2] - dirty False\n",
+            "step 50 - action south - position [3 2] - dirty False\n",
+            "step 51 - action south - position [3 3] - dirty False\n",
+            "step 52 - action north - position [3 4] - dirty True\n",
+            "step 53 - action north - position [3 3] - dirty False\n",
+            "step 54 - action east - position [3 2] - dirty False\n",
+            "step 55 - action south - position [4 2] - dirty False\n",
+            "step 56 - action east - position [4 3] - dirty False\n",
+            "step 57 - action west - position [4 3] - dirty False\n",
+            "step 58 - action north - position [3 3] - dirty False\n",
+            "step 59 - action west - position [3 2] - dirty False\n",
+            "step 60 - action west - position [2 2] - dirty False\n",
+            "step 61 - action west - position [1 2] - dirty False\n",
+            "step 62 - action west - position [0 2] - dirty False\n",
+            "step 63 - action west - position [0 2] - dirty False\n",
+            "step 64 - action west - position [0 2] - dirty False\n",
+            "step 65 - action east - position [0 2] - dirty False\n",
+            "step 66 - action suck - position [1 2] - dirty False\n",
+            "step 67 - action suck - position [1 2] - dirty False\n",
+            "step 68 - action west - position [1 2] - dirty False\n",
+            "step 69 - action south - position [0 2] - dirty False\n",
+            "step 70 - action east - position [0 3] - dirty False\n",
+            "step 71 - action east - position [1 3] - dirty False\n",
+            "step 72 - action west - position [2 3] - dirty False\n",
+            "step 73 - action west - position [1 3] - dirty False\n",
+            "step 74 - action south - position [0 3] - dirty False\n",
+            "step 75 - action south - position [0 4] - dirty False\n",
+            "step 76 - action north - position [0 4] - dirty False\n",
+            "step 77 - action south - position [0 3] - dirty False\n",
+            "step 78 - action south - position [0 4] - dirty False\n",
+            "step 79 - action west - position [0 4] - dirty False\n",
+            "step 80 - action west - position [0 4] - dirty False\n",
+            "step 81 - action north - position [0 4] - dirty False\n",
+            "step 82 - action suck - position [0 3] - dirty False\n",
+            "step 83 - action east - position [0 3] - dirty False\n",
+            "step 84 - action south - position [1 3] - dirty False\n",
+            "step 85 - action east - position [1 4] - dirty False\n",
+            "step 86 - action west - position [2 4] - dirty False\n",
+            "step 87 - action suck - position [1 4] - dirty False\n",
+            "step 88 - action south - position [1 4] - dirty False\n",
+            "step 89 - action north - position [1 4] - dirty False\n",
+            "step 90 - action west - position [1 3] - dirty False\n",
+            "step 91 - action north - position [0 3] - dirty False\n",
+            "step 92 - action suck - position [0 2] - dirty False\n",
+            "step 93 - action east - position [0 2] - dirty False\n",
+            "step 94 - action south - position [1 2] - dirty False\n",
+            "step 95 - action suck - position [1 3] - dirty False\n",
+            "step 96 - action suck - position [1 3] - dirty False\n",
+            "step 97 - action suck - position [1 3] - dirty False\n",
+            "step 98 - action east - position [1 3] - dirty False\n",
+            "step 99 - action south - position [2 3] - dirty False\n",
+            "step 100 - action suck - position [2 4] - dirty False\n",
+            "step 101 - action west - position [2 4] - dirty False\n",
+            "step 102 - action north - position [1 4] - dirty False\n",
+            "step 103 - action south - position [1 3] - dirty False\n",
+            "step 104 - action east - position [1 4] - dirty False\n",
+            "step 105 - action west - position [2 4] - dirty False\n",
+            "step 106 - action suck - position [1 4] - dirty False\n",
+            "step 107 - action east - position [1 4] - dirty False\n",
+            "step 108 - action west - position [2 4] - dirty False\n",
+            "step 109 - action suck - position [1 4] - dirty False\n",
+            "step 110 - action west - position [1 4] - dirty False\n",
+            "step 111 - action east - position [0 4] - dirty False\n",
+            "step 112 - action south - position [1 4] - dirty False\n",
+            "step 113 - action north - position [1 4] - dirty False\n",
+            "step 114 - action east - position [1 3] - dirty False\n",
+            "step 115 - action suck - position [2 3] - dirty False\n",
+            "step 116 - action north - position [2 3] - dirty False\n",
+            "step 117 - action suck - position [2 2] - dirty False\n",
+            "step 118 - action west - position [2 2] - dirty False\n",
+            "step 119 - action north - position [1 2] - dirty False\n",
+            "step 120 - action west - position [1 1] - dirty False\n",
+            "step 121 - action north - position [0 1] - dirty False\n",
+            "step 122 - action north - position [0 0] - dirty False\n",
+            "step 123 - action west - position [0 0] - dirty False\n",
+            "step 124 - action east - position [0 0] - dirty False\n",
+            "step 125 - action north - position [1 0] - dirty False\n",
+            "step 126 - action suck - position [1 0] - dirty False\n",
+            "step 127 - action south - position [1 0] - dirty False\n",
+            "step 128 - action south - position [1 1] - dirty False\n",
+            "step 129 - action west - position [1 2] - dirty False\n",
+            "step 130 - action north - position [0 2] - dirty False\n",
+            "step 131 - action north - position [0 1] - dirty False\n",
+            "step 132 - action east - position [0 0] - dirty False\n",
+            "step 133 - action west - position [1 0] - dirty False\n",
+            "step 134 - action east - position [0 0] - dirty False\n",
+            "step 135 - action north - position [1 0] - dirty False\n",
+            "step 136 - action suck - position [1 0] - dirty False\n",
+            "step 137 - action east - position [1 0] - dirty False\n",
+            "step 138 - action suck - position [2 0] - dirty True\n",
+            "step 139 - action suck - position [2 0] - dirty False\n",
+            "step 140 - action south - position [2 0] - dirty False\n",
+            "step 141 - action east - position [2 1] - dirty False\n",
+            "step 142 - action suck - position [3 1] - dirty False\n",
+            "step 143 - action suck - position [3 1] - dirty False\n",
+            "step 144 - action north - position [3 1] - dirty False\n",
+            "step 145 - action east - position [3 0] - dirty False\n",
+            "step 146 - action west - position [4 0] - dirty False\n",
+            "step 147 - action east - position [3 0] - dirty False\n",
+            "step 148 - action suck - position [4 0] - dirty False\n",
+            "step 149 - action south - position [4 0] - dirty False\n",
+            "step 150 - action south - position [4 1] - dirty False\n",
+            "step 151 - action south - position [4 2] - dirty False\n",
+            "step 152 - action south - position [4 3] - dirty False\n",
+            "step 153 - action north - position [4 4] - dirty False\n",
+            "step 154 - action suck - position [4 3] - dirty False\n",
+            "step 155 - action south - position [4 3] - dirty False\n",
+            "step 156 - action suck - position [4 4] - dirty False\n",
+            "step 157 - action east - position [4 4] - dirty False\n",
+            "step 158 - action west - position [4 4] - dirty False\n",
+            "step 159 - action south - position [3 4] - dirty True\n",
+            "step 160 - action suck - position [3 4] - dirty True\n"
+          ]
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "(2, 104)"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 19
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "EU8pJ2FdG6st"
+      },
+      "source": [
+        "## Task 2:  Implement a simple reflex agent [10 Points] \n",
+        "\n",
+        "The simple reflex agent randomly walks around but reacts to the bumper sensor by not bumping into the wall and to dirt with sucking. Implement the agent program as a function.\n",
+        "\n",
+        "_Note:_ Agents cannot directly use variable in the environment. They only gets the percepts as the arguments to the agent function."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "aryNGgO_G6sv"
+      },
+      "outputs": [],
+      "source": [
+        "# Your code and description goes here\n",
+        "import numpy as np\n",
+        "class Agent():\n",
+        "    def __init__(self, n=5):\n",
+        "        position = np.random.randint(0, n, 2)\n",
+        "        self.x = position[0]\n",
+        "        self.y = position[1]\n",
+        "\n",
+        "    def get_perceptions(self, environment):\n",
+        "        north, south, west, east = True, True, True, True\n",
+        "        dim = environment.shape[0]\n",
+        "        if self.x == 0:\n",
+        "          west = False\n",
+        "        if self.x == dim-1:\n",
+        "          east = False\n",
+        "        if self.y == 0:\n",
+        "          north = False\n",
+        "        if self.y == dim-1:\n",
+        "          south = False\n",
+        "        perceptions = {\n",
+        "            \"north\" : north, \n",
+        "            \"south\" : south, \n",
+        "            \"west\" : west, \n",
+        "            \"east\" : east\n",
+        "        }\n",
+        "        dirty = environment[self.x][self.y]\n",
+        "        return perceptions, dirty\n",
+        "\n",
+        "    def get_action(self, env):\n",
+        "      perceptions, dirty = self.get_perceptions(env)\n",
+        "      actions = [\"north\", \"east\", \"west\", \"south\", \"suck\"]\n",
+        "      while True:\n",
+        "        if dirty == True:\n",
+        "          return \"suck\"\n",
+        "        action = np.random.choice(actions)      \n",
+        "        if ((action == \"north\") and (perceptions[\"north\"])):\n",
+        "          return \"north\"\n",
+        "        if ((action == \"south\") and (perceptions[\"south\"])):\n",
+        "          return \"south\"\n",
+        "        if ((action == \"west\") and (perceptions[\"west\"])):\n",
+        "          return \"west\" \n",
+        "        if ((action == \"east\") and (perceptions[\"east\"])):\n",
+        "          return \"east\"               \n",
+        "      return action    \n",
+        "\n",
+        "    def move(self, action, env):\n",
+        "        perceptions, dirty = self.get_perceptions(env)\n",
+        "        if ((action == 'north') and (perceptions['north'])):\n",
+        "          self.y -= 1\n",
+        "          return True\n",
+        "        elif ((action == 'south') and (perceptions['south'])):\n",
+        "          self.y += 1   \n",
+        "          return True     \n",
+        "        elif ((action == 'west') and (perceptions['west'])):\n",
+        "          self.x -= 1\n",
+        "          return True\n",
+        "        elif ((action == 'east') and (perceptions['east'])):\n",
+        "          self.x += 1\n",
+        "          return True\n",
+        "        else:\n",
+        "          return False \n",
+        "\n",
+        "    def suck(self, env):\n",
+        "        perceptions, dirty = self.get_perceptions(env)\n",
+        "        if (dirty):\n",
+        "          env[self.x][self.y] = False\n",
+        "          return True\n",
+        "        else:\n",
+        "          return False     "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "ag = Agent()"
+      ],
+      "metadata": {
+        "id": "6h8o7QAVuh-G"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "from os.path import normpath\n",
+        "class EnvSimulation():\n",
+        "    def __init__(self, agent, n=5, prob=0.2):\n",
+        "        self.agent = agent\n",
+        "        self.n = n\n",
+        "        self.prob = prob\n",
+        "        self.verbose = True\n",
+        "\n",
+        "    def get_total_positions_dirty(self, env):\n",
+        "      return np.sum(env)\n",
+        "\n",
+        "    def create_environment(self):\n",
+        "\n",
+        "        def convert_to_boolean(x, prob=0.2):\n",
+        "            return True if x < prob else False  \n",
+        "\n",
+        "        self.env = np.random.random((self.n,self.n))\n",
+        "        func_vectorized = np.vectorize(convert_to_boolean)\n",
+        "        self.env = func_vectorized(self.env, self.prob)\n",
+        "        return self.env\n",
+        "\n",
+        "    def run_simulation(self):\n",
+        "        env = self.create_environment()\n",
+        "        costs = 0\n",
+        "        i = 0\n",
+        "        while (get_total_positions_dirty(env) != 0):\n",
+        "              action = self.agent.get_action(env)\n",
+        "              if (self.verbose): \n",
+        "                  perceptions, dirty = self.agent.get_perceptions(env)\n",
+        "                  p_x, p_y = self.agent.x, self.agent.y\n",
+        "                  print(\"step {} - action {} - position {} - dirty {}\".format(\\\n",
+        "                  i, action[0].upper(), (p_x, p_y), dirty))\n",
+        "              if (action == \"suck\"):\n",
+        "                  if (self.agent.suck(env)):\n",
+        "                      costs += 1\n",
+        "              else:\n",
+        "                  if (self.agent.move(action, env)):\n",
+        "                      costs += 1\n",
+        "              i+=1\n",
+        "        return costs"
+      ],
+      "metadata": {
+        "id": "X0cRqFkluf32"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "es = EnvSimulation(ag)"
+      ],
+      "metadata": {
+        "id": "6mOE1fHJus1u"
+      },
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "es.run_simulation()"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "OwvMS22yuycU",
+        "outputId": "9cd118a5-98f2-45ee-897c-49367b29c4a1"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "step 0 - action E - position (1, 3) - dirty False\n",
+            "step 1 - action E - position (2, 3) - dirty False\n",
+            "step 2 - action W - position (3, 3) - dirty False\n",
+            "step 3 - action S - position (2, 3) - dirty False\n",
+            "step 4 - action S - position (2, 4) - dirty True\n",
+            "step 5 - action W - position (2, 4) - dirty False\n",
+            "step 6 - action W - position (1, 4) - dirty False\n",
+            "step 7 - action E - position (0, 4) - dirty False\n",
+            "step 8 - action N - position (1, 4) - dirty False\n",
+            "step 9 - action W - position (1, 3) - dirty False\n",
+            "step 10 - action S - position (0, 3) - dirty True\n",
+            "step 11 - action E - position (0, 3) - dirty False\n",
+            "step 12 - action E - position (1, 3) - dirty False\n",
+            "step 13 - action S - position (2, 3) - dirty False\n",
+            "step 14 - action W - position (2, 4) - dirty False\n",
+            "step 15 - action W - position (1, 4) - dirty False\n",
+            "step 16 - action E - position (0, 4) - dirty False\n",
+            "step 17 - action W - position (1, 4) - dirty False\n",
+            "step 18 - action E - position (0, 4) - dirty False\n",
+            "step 19 - action E - position (1, 4) - dirty False\n",
+            "step 20 - action E - position (2, 4) - dirty False\n",
+            "step 21 - action S - position (3, 4) - dirty True\n",
+            "step 22 - action N - position (3, 4) - dirty False\n",
+            "step 23 - action W - position (3, 3) - dirty False\n",
+            "step 24 - action E - position (2, 3) - dirty False\n",
+            "step 25 - action E - position (3, 3) - dirty False\n",
+            "step 26 - action W - position (4, 3) - dirty False\n",
+            "step 27 - action S - position (3, 3) - dirty False\n",
+            "step 28 - action N - position (3, 4) - dirty False\n",
+            "step 29 - action W - position (3, 3) - dirty False\n",
+            "step 30 - action E - position (2, 3) - dirty False\n",
+            "step 31 - action W - position (3, 3) - dirty False\n",
+            "step 32 - action W - position (2, 3) - dirty False\n",
+            "step 33 - action E - position (1, 3) - dirty False\n",
+            "step 34 - action N - position (2, 3) - dirty False\n",
+            "step 35 - action S - position (2, 2) - dirty True\n",
+            "step 36 - action W - position (2, 2) - dirty False\n",
+            "step 37 - action E - position (1, 2) - dirty False\n",
+            "step 38 - action W - position (2, 2) - dirty False\n",
+            "step 39 - action S - position (1, 2) - dirty False\n",
+            "step 40 - action W - position (1, 3) - dirty False\n",
+            "step 41 - action S - position (0, 3) - dirty False\n",
+            "step 42 - action E - position (0, 4) - dirty False\n",
+            "step 43 - action N - position (1, 4) - dirty False\n",
+            "step 44 - action N - position (1, 3) - dirty False\n",
+            "step 45 - action E - position (1, 2) - dirty False\n",
+            "step 46 - action S - position (2, 2) - dirty False\n",
+            "step 47 - action E - position (2, 3) - dirty False\n",
+            "step 48 - action W - position (3, 3) - dirty False\n",
+            "step 49 - action W - position (2, 3) - dirty False\n",
+            "step 50 - action N - position (1, 3) - dirty False\n",
+            "step 51 - action S - position (1, 2) - dirty False\n",
+            "step 52 - action S - position (1, 3) - dirty False\n",
+            "step 53 - action N - position (1, 4) - dirty False\n",
+            "step 54 - action S - position (1, 3) - dirty False\n",
+            "step 55 - action E - position (1, 4) - dirty False\n",
+            "step 56 - action E - position (2, 4) - dirty False\n",
+            "step 57 - action W - position (3, 4) - dirty False\n",
+            "step 58 - action N - position (2, 4) - dirty False\n",
+            "step 59 - action W - position (2, 3) - dirty False\n",
+            "step 60 - action N - position (1, 3) - dirty False\n",
+            "step 61 - action W - position (1, 2) - dirty False\n",
+            "step 62 - action N - position (0, 2) - dirty False\n",
+            "step 63 - action S - position (0, 1) - dirty True\n",
+            "step 64 - action E - position (0, 1) - dirty False\n",
+            "step 65 - action N - position (1, 1) - dirty False\n",
+            "step 66 - action E - position (1, 0) - dirty False\n",
+            "step 67 - action W - position (2, 0) - dirty False\n",
+            "step 68 - action S - position (1, 0) - dirty False\n",
+            "step 69 - action N - position (1, 1) - dirty False\n",
+            "step 70 - action W - position (1, 0) - dirty False\n",
+            "step 71 - action E - position (0, 0) - dirty False\n",
+            "step 72 - action W - position (1, 0) - dirty False\n",
+            "step 73 - action S - position (0, 0) - dirty False\n",
+            "step 74 - action E - position (0, 1) - dirty False\n",
+            "step 75 - action W - position (1, 1) - dirty False\n",
+            "step 76 - action E - position (0, 1) - dirty False\n",
+            "step 77 - action W - position (1, 1) - dirty False\n",
+            "step 78 - action S - position (0, 1) - dirty False\n",
+            "step 79 - action E - position (0, 2) - dirty False\n",
+            "step 80 - action N - position (1, 2) - dirty False\n",
+            "step 81 - action W - position (1, 1) - dirty False\n",
+            "step 82 - action N - position (0, 1) - dirty False\n",
+            "step 83 - action S - position (0, 0) - dirty False\n",
+            "step 84 - action N - position (0, 1) - dirty False\n",
+            "step 85 - action S - position (0, 0) - dirty False\n",
+            "step 86 - action N - position (0, 1) - dirty False\n",
+            "step 87 - action S - position (0, 0) - dirty False\n",
+            "step 88 - action N - position (0, 1) - dirty False\n",
+            "step 89 - action E - position (0, 0) - dirty False\n",
+            "step 90 - action W - position (1, 0) - dirty False\n",
+            "step 91 - action S - position (0, 0) - dirty False\n",
+            "step 92 - action E - position (0, 1) - dirty False\n",
+            "step 93 - action W - position (1, 1) - dirty False\n",
+            "step 94 - action E - position (0, 1) - dirty False\n",
+            "step 95 - action S - position (1, 1) - dirty False\n",
+            "step 96 - action N - position (1, 2) - dirty False\n",
+            "step 97 - action W - position (1, 1) - dirty False\n",
+            "step 98 - action E - position (0, 1) - dirty False\n",
+            "step 99 - action W - position (1, 1) - dirty False\n",
+            "step 100 - action E - position (0, 1) - dirty False\n",
+            "step 101 - action N - position (1, 1) - dirty False\n",
+            "step 102 - action S - position (1, 0) - dirty False\n",
+            "step 103 - action E - position (1, 1) - dirty False\n",
+            "step 104 - action S - position (2, 1) - dirty True\n",
+            "step 105 - action W - position (2, 1) - dirty False\n",
+            "step 106 - action W - position (1, 1) - dirty False\n",
+            "step 107 - action N - position (0, 1) - dirty False\n",
+            "step 108 - action S - position (0, 0) - dirty False\n",
+            "step 109 - action S - position (0, 1) - dirty False\n",
+            "step 110 - action S - position (0, 2) - dirty False\n",
+            "step 111 - action S - position (0, 3) - dirty False\n",
+            "step 112 - action E - position (0, 4) - dirty False\n",
+            "step 113 - action W - position (1, 4) - dirty False\n",
+            "step 114 - action N - position (0, 4) - dirty False\n",
+            "step 115 - action S - position (0, 3) - dirty False\n",
+            "step 116 - action E - position (0, 4) - dirty False\n",
+            "step 117 - action N - position (1, 4) - dirty False\n",
+            "step 118 - action E - position (1, 3) - dirty False\n",
+            "step 119 - action S - position (2, 3) - dirty False\n",
+            "step 120 - action N - position (2, 4) - dirty False\n",
+            "step 121 - action N - position (2, 3) - dirty False\n",
+            "step 122 - action W - position (2, 2) - dirty False\n",
+            "step 123 - action E - position (1, 2) - dirty False\n",
+            "step 124 - action W - position (2, 2) - dirty False\n",
+            "step 125 - action W - position (1, 2) - dirty False\n",
+            "step 126 - action E - position (0, 2) - dirty False\n",
+            "step 127 - action W - position (1, 2) - dirty False\n",
+            "step 128 - action E - position (0, 2) - dirty False\n",
+            "step 129 - action E - position (1, 2) - dirty False\n",
+            "step 130 - action E - position (2, 2) - dirty False\n",
+            "step 131 - action W - position (3, 2) - dirty False\n",
+            "step 132 - action N - position (2, 2) - dirty False\n",
+            "step 133 - action W - position (2, 1) - dirty False\n",
+            "step 134 - action E - position (1, 1) - dirty False\n",
+            "step 135 - action N - position (2, 1) - dirty False\n",
+            "step 136 - action S - position (2, 0) - dirty False\n",
+            "step 137 - action W - position (2, 1) - dirty False\n",
+            "step 138 - action N - position (1, 1) - dirty False\n",
+            "step 139 - action E - position (1, 0) - dirty False\n",
+            "step 140 - action W - position (2, 0) - dirty False\n",
+            "step 141 - action S - position (1, 0) - dirty False\n",
+            "step 142 - action E - position (1, 1) - dirty False\n",
+            "step 143 - action W - position (2, 1) - dirty False\n",
+            "step 144 - action E - position (1, 1) - dirty False\n",
+            "step 145 - action S - position (2, 1) - dirty False\n",
+            "step 146 - action W - position (2, 2) - dirty False\n",
+            "step 147 - action N - position (1, 2) - dirty False\n",
+            "step 148 - action N - position (1, 1) - dirty False\n",
+            "step 149 - action E - position (1, 0) - dirty False\n",
+            "step 150 - action S - position (2, 0) - dirty False\n",
+            "step 151 - action E - position (2, 1) - dirty False\n",
+            "step 152 - action S - position (3, 1) - dirty False\n",
+            "step 153 - action W - position (3, 2) - dirty False\n",
+            "step 154 - action S - position (2, 2) - dirty False\n",
+            "step 155 - action N - position (2, 3) - dirty False\n",
+            "step 156 - action S - position (2, 2) - dirty False\n",
+            "step 157 - action E - position (2, 3) - dirty False\n",
+            "step 158 - action S - position (3, 3) - dirty False\n",
+            "step 159 - action N - position (3, 4) - dirty False\n",
+            "step 160 - action W - position (3, 3) - dirty False\n",
+            "step 161 - action E - position (2, 3) - dirty False\n",
+            "step 162 - action E - position (3, 3) - dirty False\n",
+            "step 163 - action N - position (4, 3) - dirty False\n",
+            "step 164 - action N - position (4, 2) - dirty False\n",
+            "step 165 - action S - position (4, 1) - dirty False\n",
+            "step 166 - action N - position (4, 2) - dirty False\n",
+            "step 167 - action S - position (4, 1) - dirty False\n",
+            "step 168 - action N - position (4, 2) - dirty False\n",
+            "step 169 - action N - position (4, 1) - dirty False\n",
+            "step 170 - action W - position (4, 0) - dirty False\n",
+            "step 171 - action W - position (3, 0) - dirty False\n",
+            "step 172 - action E - position (2, 0) - dirty False\n",
+            "step 173 - action W - position (3, 0) - dirty False\n",
+            "step 174 - action E - position (2, 0) - dirty False\n",
+            "step 175 - action W - position (3, 0) - dirty False\n",
+            "step 176 - action W - position (2, 0) - dirty False\n",
+            "step 177 - action S - position (1, 0) - dirty False\n",
+            "step 178 - action S - position (1, 1) - dirty False\n",
+            "step 179 - action W - position (1, 2) - dirty False\n",
+            "step 180 - action S - position (0, 2) - dirty False\n",
+            "step 181 - action N - position (0, 3) - dirty False\n",
+            "step 182 - action N - position (0, 2) - dirty False\n",
+            "step 183 - action S - position (0, 1) - dirty False\n",
+            "step 184 - action S - position (0, 2) - dirty False\n",
+            "step 185 - action S - position (0, 3) - dirty False\n",
+            "step 186 - action N - position (0, 4) - dirty False\n",
+            "step 187 - action E - position (0, 3) - dirty False\n",
+            "step 188 - action N - position (1, 3) - dirty False\n",
+            "step 189 - action E - position (1, 2) - dirty False\n",
+            "step 190 - action W - position (2, 2) - dirty False\n",
+            "step 191 - action E - position (1, 2) - dirty False\n",
+            "step 192 - action E - position (2, 2) - dirty False\n",
+            "step 193 - action S - position (3, 2) - dirty False\n",
+            "step 194 - action W - position (3, 3) - dirty False\n",
+            "step 195 - action S - position (2, 3) - dirty False\n",
+            "step 196 - action N - position (2, 4) - dirty False\n",
+            "step 197 - action N - position (2, 3) - dirty False\n",
+            "step 198 - action S - position (2, 2) - dirty False\n",
+            "step 199 - action S - position (2, 3) - dirty False\n",
+            "step 200 - action N - position (2, 4) - dirty False\n",
+            "step 201 - action N - position (2, 3) - dirty False\n",
+            "step 202 - action N - position (2, 2) - dirty False\n",
+            "step 203 - action N - position (2, 1) - dirty False\n",
+            "step 204 - action E - position (2, 0) - dirty False\n",
+            "step 205 - action E - position (3, 0) - dirty False\n",
+            "step 206 - action W - position (4, 0) - dirty False\n",
+            "step 207 - action W - position (3, 0) - dirty False\n",
+            "step 208 - action E - position (2, 0) - dirty False\n",
+            "step 209 - action W - position (3, 0) - dirty False\n",
+            "step 210 - action E - position (2, 0) - dirty False\n",
+            "step 211 - action E - position (3, 0) - dirty False\n",
+            "step 212 - action W - position (4, 0) - dirty False\n",
+            "step 213 - action E - position (3, 0) - dirty False\n",
+            "step 214 - action S - position (4, 0) - dirty False\n",
+            "step 215 - action S - position (4, 1) - dirty False\n",
+            "step 216 - action W - position (4, 2) - dirty False\n",
+            "step 217 - action W - position (3, 2) - dirty False\n",
+            "step 218 - action W - position (2, 2) - dirty False\n",
+            "step 219 - action E - position (1, 2) - dirty False\n",
+            "step 220 - action S - position (2, 2) - dirty False\n",
+            "step 221 - action W - position (2, 3) - dirty False\n",
+            "step 222 - action S - position (1, 3) - dirty False\n",
+            "step 223 - action E - position (1, 4) - dirty False\n",
+            "step 224 - action E - position (2, 4) - dirty False\n",
+            "step 225 - action W - position (3, 4) - dirty False\n",
+            "step 226 - action E - position (2, 4) - dirty False\n",
+            "step 227 - action W - position (3, 4) - dirty False\n",
+            "step 228 - action W - position (2, 4) - dirty False\n",
+            "step 229 - action W - position (1, 4) - dirty False\n",
+            "step 230 - action N - position (0, 4) - dirty False\n",
+            "step 231 - action E - position (0, 3) - dirty False\n",
+            "step 232 - action E - position (1, 3) - dirty False\n",
+            "step 233 - action N - position (2, 3) - dirty False\n",
+            "step 234 - action S - position (2, 2) - dirty False\n",
+            "step 235 - action S - position (2, 3) - dirty False\n",
+            "step 236 - action N - position (2, 4) - dirty False\n",
+            "step 237 - action E - position (2, 3) - dirty False\n",
+            "step 238 - action S - position (3, 3) - dirty False\n",
+            "step 239 - action E - position (3, 4) - dirty False\n",
+            "step 240 - action S - position (4, 4) - dirty True\n"
+          ]
+        },
+        {
+          "output_type": "execute_result",
+          "data": {
+            "text/plain": [
+              "241"
+            ]
+          },
+          "metadata": {},
+          "execution_count": 24
+        }
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "DRx3WQR1G6sv"
+      },
+      "source": [
+        "## Task 3: Implement a model-based reflex agent [20 Points]\n",
+        "\n",
+        "Model-based agents use a state to keep track of what they have done and perceived so far. Your agent needs to find out where it is located and then keep track of its current location. You also need a set of rules based on the state and the percepts to make sure that the agent will clean the whole room. For example, the agent can move to a corner to determine its location and then it can navigate through the whole room and clean dirty squares.\n",
+        "\n",
+        "Describe how you define the __agent state__ and how your agent works before implementing it. ([Help with implementing state information on Python](https://github.com/mhahsler/CS7320-AI/blob/master/HOWTOs/store_agent_state_information.ipynb))"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "p3DMk4MWG6sw"
+      },
+      "outputs": [],
+      "source": [
+        "# Your short description of the state and your implementation goes here"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "e2JHHHodG6sw"
+      },
+      "outputs": [],
+      "source": [
+        "# Your code goes here"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "ofCLX-zMG6sx"
+      },
+      "source": [
+        "## Task 4: Simulation study [30 Points]\n",
+        "\n",
+        "Compare the performance (the performance measure is defined in the PEAS description above) of the agents using  environments of different size. E.g., $5 \\times 5$, $10 \\times 10$ and\n",
+        "$100 \\times 100$. Use 100 random runs for each. Present the results using tables and graphs. Discuss the differences between the agents. \n",
+        "([Help with charts and tables in Python](https://github.com/mhahsler/CS7320-AI/blob/master/HOWTOs/charts_and_tables.ipynb))"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "jOnnJYM2G6sx"
+      },
+      "outputs": [],
+      "source": [
+        "# Your code goes here"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "rY_jHEbxG6sx"
+      },
+      "source": [
+        "Fill out the following table with the average performance measure for 100 random runs (you may also create this table with code):\n",
+        "\n",
+        "| Size     | Randomized Agent | Simple Reflex Agent | Model-based Reflex Agent |\n",
+        "|----------|------------------|---------------------|--------------------------|\n",
+        "| 5x5     | | | |\n",
+        "| 10x10   | | | |\n",
+        "| 100x100 | | | |\n",
+        "\n",
+        "Add charts to compare the performance of the different agents."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "W0CUN3z8G6sy"
+      },
+      "outputs": [],
+      "source": [
+        "# Your graphs and discussion of the results goes here"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "suwCfUOlG6sy"
+      },
+      "source": [
+        "## Task 5: Robustness of the agent implementations [10 Points] \n",
+        "\n",
+        "Describe how **your agent implementations** will perform \n",
+        "\n",
+        "* if it is put into a rectangular room with unknown size, \n",
+        "* if the cleaning area can have an iregular shape (e.g., a hallway connecting two rooms), or \n",
+        "* if the room contains obstacles (i.e., squares that it cannot pass through and trigger the bumper sensors)."
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "fiS93cW1G6sy"
+      },
+      "outputs": [],
+      "source": [
+        "# Answer goes here"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "7-D86VJ9G6sy"
+      },
+      "source": [
+        "## Graduate student advanced task: Obstacles [10 Points]\n",
+        "\n",
+        "__Undergraduate students:__ This is a bonus task you can attempt if you like [+5 Bonus Points].\n",
+        "\n",
+        "1. Change your simulation environment tor run experiments for the following problem: Add random obstacle squares that also trigger the bumper sensor. The agent does not know where the obstacles are. Observe how this changes the performance of the three implementations.\n",
+        "\n",
+        "2. Describe what would need to be done to perform better with obstacles. Add code if you can. "
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "0daxcu65G6sz"
+      },
+      "outputs": [],
+      "source": [
+        "# Your code and discussion goes here"
+      ]
+    },
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "CGCJAuHCG6sz"
+      },
+      "source": [
+        "## More advanced implementation tasks\n",
+        "\n",
+        "* __Agent for and environment with obstacles:__ Implement an agent for an environment where the agent does not know how large the environment is (we assume it is rectangular), where it starts or where the obstacles are. An option would be to always move to the closest unchecked/uncleaned square (note that this is actualy depth-first search).\n",
+        "\n",
+        "* __Utility-based agent:__ Change the environment for a $5 \\times 5$ room, so each square has a fixed probability of getting dirty again. For the implementation, we give the environment a 2-dimensional array of probabilities. The utility of a state is defined as the number of currebntly clean squares in the room. Implement a utility-based agent that maximizes the expected utility over one full charge which lasts for 100000 time steps. To do this, the agent needs to learn the probabilities with which different squares get dirty again. This is very tricky!"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "dri5ZWyiG6sz"
+      },
+      "outputs": [],
+      "source": [
+        "# Your ideas/code"
+      ]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+      "display_name": "Python 3 (ipykernel)",
+      "language": "python",
+      "name": "python3"
+    },
+    "language_info": {
+      "codemirror_mode": {
+        "name": "ipython",
+        "version": 3
+      },
+      "file_extension": ".py",
+      "mimetype": "text/x-python",
+      "name": "python",
+      "nbconvert_exporter": "python",
+      "pygments_lexer": "ipython3",
+      "version": "3.9.5"
+    },
+    "toc-autonumbering": false,
+    "colab": {
+      "provenance": [],
+      "include_colab_link": true
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
